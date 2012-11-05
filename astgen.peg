@@ -113,17 +113,13 @@ void generate(unique_ptr<Node>& node) {
 %}
 
 grammar = (- astnode -)* !.
-id = <[a-zA-Z0-9_]+>                    { $$ = make_unique<Id>(yytext); }
-type = ('[' - <id> - ']')               { $$ = make_unique<Type>(make_unique<Id>(yytext),true); }
-     | <id>                             { $$ = make_unique<Type>(make_unique<Id>(yytext),false); }
-attribute = - i:id - ':' - t:type -     { $$ = make_unique<Attribute>(move(i),move(t)); }
-astnode = i:id -                        
-          '(' - (
-            @a:attribute                 
-          )?
-          (- 
-            ',' - @a:attribute           
-          -)* - ')'                     { current_node=make_unique<Node>(move(i),move(a)); generate(current_node); }
+id = <[a-zA-Z0-9_]+>                        { $$ = make_unique<Id>(yytext); }
+type = ('[' - i:id - ']')                   { $$ = make_unique<Type>(move(i),true); }
+     | i:id                                 { $$ = make_unique<Type>(move(i),false); }
+attribute = - i:id - ':' - t:type -         { $$ = make_unique<Attribute>(move(i),move(t)); }
+astnode = i:id -
+          '(' - @a:attribute? 
+          (-',' - @a:attribute - )*-')'     { current_node=make_unique<Node>(move(i),move(a)); generate(current_node); }
 
 -             = comment | space
 space         = [ \t\r\n]*
