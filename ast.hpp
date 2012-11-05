@@ -73,6 +73,7 @@ struct Node : public Ast {
 
     for (auto& item : attributes) {
       this->attributes.push_back(std::unique_ptr<Attribute>(dynamic_cast<Attribute*>(item.get())));
+      item.release();
     }
   }
 };
@@ -82,7 +83,8 @@ std::ostream& operator<< (std::ostream& out,const Node& node) {
   out << *node.name;
   out << "[";
   for (auto& item : node.attributes) {
-  out << *item;  }
+    out << *item;
+  }
   out << "]";
   out << ")";
 }

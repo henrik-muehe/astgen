@@ -80,6 +80,7 @@ void generate(unique_ptr<Node>& node) {
     } else {
       out << "    " << "for (auto& item : " << a->name->id << ") {" << endl;
       out << "      " << "this->" << a->name->id << ".push_back(std::unique_ptr<"<< a->type->id->id <<">(dynamic_cast<"<< a->type->id->id << "*>(item.get())));" << endl;
+      out << "      " << "item.release();"<<endl;
       out << "    " << "}"<<endl;
     }
   }    
@@ -94,7 +95,7 @@ void generate(unique_ptr<Node>& node) {
     if (a->type->collection) {
       out << "  out << \"[\";" << endl;
       out << "  " << "for (auto& item : node." << a->name->id << ") {" << endl;
-      out << "  " << "out << *item;";
+      out << "    " << "out << *item;" << endl;
       out << "  " << "}" << endl;
       out << "  out << \"]\";" << endl;
     } else {
@@ -116,13 +117,13 @@ id = <[a-zA-Z0-9_]+>                    { $$ = make_unique<Id>(yytext); }
 type = ('[' - <id> - ']')               { $$ = make_unique<Type>(make_unique<Id>(yytext),true); }
      | <id>                             { $$ = make_unique<Type>(make_unique<Id>(yytext),false); }
 attribute = - i:id - ':' - t:type -     { $$ = make_unique<Attribute>(move(i),move(t)); }
-astnode = i:id -                        { current_node=make_unique<Node>(move(i),vector<unique_ptr<Ast>>()); }
+astnode = i:id -                        
           '(' - (
-            a:attribute                 { current_node->attributes.push_back(std::unique_ptr<Attribute>(reinterpret_cast<Attribute*>(a.get()))); a.release(); }
+            @a:attribute                 
           )?
           (- 
-            ',' - a:attribute           { current_node->attributes.push_back(std::unique_ptr<Attribute>(reinterpret_cast<Attribute*>(a.get()))); a.release(); }
-          -)* - ')'                     { std::cerr << *current_node << endl; generate(current_node); }
+            ',' - @a:attribute           
+          -)* - ')'                     { current_node=make_unique<Node>(move(i),move(a)); generate(current_node); }
 
 -             = comment | space
 space         = [ \t\r\n]*
