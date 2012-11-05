@@ -12,7 +12,7 @@ std::unique_ptr<T> make_unique( Args&& ...args )
     return std::unique_ptr<T>( new T( std::forward<Args>(args)... ) );
 }
 
-#include "ast_new.hpp"
+#include "ast.hpp"
 
 using namespace std;
 
@@ -63,7 +63,7 @@ void generate(unique_ptr<Node>& node) {
     } else if (!a->type->collection) {
       out << "std::unique_ptr<Ast>&& " << a->name->id;
     } else {
-      out << "std::vector<unique_ptr<Ast>>&& " << a->name->id;
+      out << "std::vector<std::unique_ptr<Ast>>&& " << a->name->id;
     }
   }
   out << ") {" << endl;
@@ -78,7 +78,9 @@ void generate(unique_ptr<Node>& node) {
       out << "    " << a->name->id << ".release();" << endl;
       out << endl;
     } else {
-      out << "    " << "this->" << a->name->id << "=" << a->name->id << ";" << endl;
+      out << "    " << "for (auto& item : " << a->name->id << ") {" << endl;
+      out << "      " << "this->" << a->name->id << ".push_back(std::unique_ptr<"<< a->type->id->id <<">(dynamic_cast<"<< a->type->id->id << "*>(item.get())));" << endl;
+      out << "    " << "}"<<endl;
     }
   }    
 
@@ -114,7 +116,7 @@ id = <[a-zA-Z0-9_]+>                    { $$ = make_unique<Id>(yytext); }
 type = ('[' - <id> - ']')               { $$ = make_unique<Type>(make_unique<Id>(yytext),true); }
      | <id>                             { $$ = make_unique<Type>(make_unique<Id>(yytext),false); }
 attribute = - i:id - ':' - t:type -     { $$ = make_unique<Attribute>(move(i),move(t)); }
-astnode = i:id -                        { current_node=make_unique<Node>(move(i)); }
+astnode = i:id -                        { current_node=make_unique<Node>(move(i),vector<unique_ptr<Ast>>()); }
           '(' - (
             a:attribute                 { current_node->attributes.push_back(std::unique_ptr<Attribute>(reinterpret_cast<Attribute*>(a.get()))); a.release(); }
           )?
