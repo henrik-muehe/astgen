@@ -1,0 +1,166 @@
+%{
+#include <cstdio>
+#include <iostream>
+#include <ostream>
+#include <memory>
+#include <vector>
+#include <string>
+
+template<typename T, typename ...Args>
+std::unique_ptr<T> make_unique( Args&& ...args )
+{
+    return std::unique_ptr<T>( new T( std::forward<Args>(args)... ) );
+}
+
+#include "ast_new.hpp"
+
+using namespace std;
+
+auto& out = cout;
+#define YYSTYPE std::unique_ptr<Ast>
+
+/*
+Identifier(value:string)
+Number(value:number)
+Type(typename:string)
+Attribute(name:Identifier,type:Type,options:[Option])
+Index(type:IndexType,attributes:[Identifier])
+*/
+
+/*
+Id(id:string)
+Type(id:Id,collection:bool)
+Attribute(name:Id,type:Type)
+Node(name:Id,attributes:[Attribute])
+*/
+
+static bool simpleType(std::string tn) {
+  return (tn=="bool"||tn=="integer"||tn=="string"||tn=="int64_t");
+}
+
+std::unique_ptr<Node> current_node;
+void generate(unique_ptr<Node>& node) {
+  // Struct
+  out << "struct " << node->name->id << " : public Ast {" << endl;
+  for (auto& a : node->attributes) {
+    if (simpleType(a->type->id->id)) {
+      out << "  " << a->type->id->id << " " << a->name->id << ";" << endl;
+    } else if (a->type->collection) {
+      out << "  std::vector<std::unique_ptr<" << a->type->id->id << ">> " << a->name->id << ";" << endl;
+    } else {
+      out << "  std::unique_ptr<" << a->type->id->id << "> " << a->name->id << ";" << endl;
+    }
+  }
+
+  // Constructor signature
+  out << endl;
+  out << "  " << node->name->id << "(";
+  bool first=true;
+  for (auto& a : node->attributes) {      
+    if (!first) out << ","; first=false;
+    if (simpleType(a->type->id->id)) {
+      out << "const "<< a->type->id->id << "& " << a->name->id;
+    } else if (!a->type->collection) {
+      out << "std::unique_ptr<Ast>&& " << a->name->id;
+    } else {
+      out << "std::vector<unique_ptr<Ast>>&& " << a->name->id;
+    }
+  }
+  out << ") {" << endl;
+
+  // Constructor body
+  for (auto& a : node->attributes) {      
+    if (simpleType(a->type->id->id)) {
+      out << "    " << "this->" << a->name->id << "=" << a->name->id << ";" << endl;
+    } else if (!a->type->collection) {
+      out << "    " << "this->" << a->name->id << "=std::unique_ptr<" << a->type->id->id << ">(dynamic_cast<" << a->type->id->id << "*>(" << a->name->id << ".get()));" << endl;
+      out << "    " << "if (!this->" << a->name->id << ") { std::cerr << \"AST type failure for " << node->name->id << " attribute " << a->name->id << "\" << std::endl; throw; }" << std::endl;
+      out << "    " << a->name->id << ".release();" << endl;
+      out << endl;
+    } else {
+      out << "    " << "this->" << a->name->id << "=" << a->name->id << ";" << endl;
+    }
+  }    
+
+  out << "  }" << endl;
+  out << "};" << endl << endl;  
+  
+  // ostream operator
+  out << "std::ostream& operator<< (std::ostream& out,const " << node->name->id << "& node) {" << endl;
+  out << "  " << "out << \"(" << node->name->id << ": \";" << endl;
+  for (auto& a : node->attributes) {      
+    if (a->type->collection) {
+      out << "  out << \"[\";" << endl;
+      out << "  " << "for (auto& item : node." << a->name->id << ") {" << endl;
+      out << "  " << "out << *item;";
+      out << "  " << "}" << endl;
+      out << "  out << \"]\";" << endl;
+    } else {
+      if (simpleType(a->type->id->id)) {
+        out << "  " << "out << node." << a->name->id << ";" << endl;
+      } else {
+        out << "  " << "out << *node." << a->name->id << ";" << endl;
+      }
+    }
+  }  
+  out << "  " << "out << \")\";" << endl;
+  out << "}" << endl << endl << endl;
+}
+
+%}
+
+grammar = (- astnode -)* !.
+id = <[a-zA-Z0-9_]+>                    { $$ = make_unique<Id>(yytext); }
+type = ('[' - <id> - ']')               { $$ = make_unique<Type>(make_unique<Id>(yytext),true); }
+     | <id>                             { $$ = make_unique<Type>(make_unique<Id>(yytext),false); }
+attribute = - i:id - ':' - t:type -     { $$ = make_unique<Attribute>(move(i),move(t)); }
+astnode = i:id -                        { current_node=make_unique<Node>(move(i)); }
+          '(' - (
+            a:attribute                 { current_node->attributes.push_back(std::unique_ptr<Attribute>(reinterpret_cast<Attribute*>(a.get()))); a.release(); }
+          )?
+          (- 
+            ',' - a:attribute           { current_node->attributes.push_back(std::unique_ptr<Attribute>(reinterpret_cast<Attribute*>(a.get()))); a.release(); }
+          -)* - ')'                     { std::cerr << *current_node << endl; generate(current_node); }
+
+-             = comment | space
+space         = [ \t\r\n]*
+comment       = space '--' ([^\r\n])* [\r\n]* space
+
+
+%%
+
+int main()
+{
+  GREG g;
+  GREG *G=&g;
+  
+  out << "struct Ast { virtual void can_dynamic_cast() {} };" << endl;
+  out << "std::ostream& operator<< (std::ostream& out,const Ast& node) { out << \"(Ast)\"; }" << endl;
+  out << "using std::string;" << endl << endl;
+
+  yyinit(G);
+  if (!yyparse(G)) {
+    // Find current line
+    uint64_t line=1;
+    for (uint64_t index=0;index<G->maxPos;++index) if (G->buf[index]=='\n') ++line;
+    
+    // Find previous newline distance
+    uint64_t col=1;
+    for (uint64_t index=G->maxPos;index>0&&G->buf[index]!='\n';++col,--index);
+    
+    // Delimit text with \0 at first newline after error
+    for (uint64_t index=G->maxPos;;++index) {
+      if (index>=G->limit&&(G->pos=index,!yyrefill(G))) break;
+      if (!G->buf[index] || G->buf[index]=='\r' || G->buf[index]=='\n') {
+        G->buf[index]=0;
+        break;
+      }
+    }
+
+    // Report error
+    cerr << "Line " << line << ", column " << col << " ";
+    cerr << "Can not parse: \"" << &G->buf[G->maxPos] << "\"" << endl;
+  }
+  yydeinit(G);
+  return 0;
+}

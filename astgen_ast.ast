@@ -1,0 +1,4 @@
+Id(id:string)
+Type(id:Id,collection:bool)
+Attribute(name:Id,type:Type)
+Node(name:Id,attributes:[Attribute])
