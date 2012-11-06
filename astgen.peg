@@ -19,30 +19,37 @@ using namespace std;
 auto& out = cout;
 #define YYSTYPE std::unique_ptr<Ast>
 
-/*
-Identifier(value:string)
-Number(value:number)
-Type(typename:string)
-Attribute(name:Identifier,type:Type,options:[Option])
-Index(type:IndexType,attributes:[Identifier])
-*/
-
-/*
-Id(id:string)
-Type(id:Id,collection:bool)
-Attribute(name:Id,type:Type)
-Node(name:Id,attributes:[Attribute])
-*/
-
 static bool simpleType(std::string tn) {
   return (tn=="bool"||tn=="integer"||tn=="string"||tn=="int64_t");
 }
 
-std::unique_ptr<Node> current_node;
-void generate(unique_ptr<Node>& node) {
+void generateForwards(const std::vector<std::unique_ptr<Node>>& nodes) {
+  cout << "// Forward declarations" << endl;
+  for (auto& nodePtr : nodes) {
+    Node& node=*reinterpret_cast<Node*>(nodePtr.get());    
+    out << "struct "<<node.name->id<<";" << endl;
+  }
+  cout << endl;
+}
+
+void generateVisitor(const std::vector<std::unique_ptr<Node>>& nodes) {
+  out << "// Visitor base class" << endl;
+  out << "struct Visitor {" << endl;
+  out << "  virtual void visitPre(const Ast&) {}" << endl;
+  out << "  virtual void visitPost(const Ast&) {}" << endl;
+  for (auto& nodePtr : nodes) {
+    Node& node=*reinterpret_cast<Node*>(nodePtr.get());
+    
+    out << "  virtual void visitPre(const "<<node.name->id<<"&) {}" << endl;
+    out << "  virtual void visitPost(const "<<node.name->id<<"&) {}" << endl;
+  }
+  out << "};" << endl << endl;
+}
+
+void generate(Node& node) {
   // Struct
-  out << "struct " << node->name->id << " : public Ast {" << endl;
-  for (auto& a : node->attributes) {
+  out << "struct " << node.name->id << " : public Ast {" << endl;
+  for (auto& a : node.attributes) {
     if (simpleType(a->type->id->id)) {
       out << "  " << a->type->id->id << " " << a->name->id << ";" << endl;
     } else if (a->type->collection) {
@@ -54,9 +61,9 @@ void generate(unique_ptr<Node>& node) {
 
   // Constructor signature
   out << endl;
-  out << "  " << node->name->id << "(";
+  out << "  " << node.name->id << "(";
   bool first=true;
-  for (auto& a : node->attributes) {      
+  for (auto& a : node.attributes) {      
     if (!first) out << ","; first=false;
     if (simpleType(a->type->id->id)) {
       out << "const "<< a->type->id->id << "& " << a->name->id;
@@ -69,12 +76,12 @@ void generate(unique_ptr<Node>& node) {
   out << ") {" << endl;
 
   // Constructor body
-  for (auto& a : node->attributes) {      
+  for (auto& a : node.attributes) {      
     if (simpleType(a->type->id->id)) {
       out << "    " << "this->" << a->name->id << "=" << a->name->id << ";" << endl;
     } else if (!a->type->collection) {
       out << "    " << "this->" << a->name->id << "=std::unique_ptr<" << a->type->id->id << ">(dynamic_cast<" << a->type->id->id << "*>(" << a->name->id << ".get()));" << endl;
-      out << "    " << "if (!this->" << a->name->id << ") { std::cerr << \"AST type failure for " << node->name->id << " attribute " << a->name->id << "\" << std::endl; throw; }" << std::endl;
+      out << "    " << "if (!this->" << a->name->id << ") { std::cerr << \"AST type failure for " << node.name->id << " attribute " << a->name->id << "\" << std::endl; throw; }" << std::endl;
       out << "    " << a->name->id << ".release();" << endl;
       out << endl;
     } else {
@@ -84,14 +91,32 @@ void generate(unique_ptr<Node>& node) {
       out << "    " << "}"<<endl;
     }
   }    
-
-  out << "  }" << endl;
-  out << "};" << endl << endl;  
+  out << "  }" << endl << endl;
+  
+  // Visitor accept
+  out << "  " << "void accept(Visitor& visitor) {" << endl;
+  out << "    " << "visitor.visitPre(*this);" << endl;
+  for (auto& a : node.attributes) {      
+    if (simpleType(a->type->id->id)) {
+      // We don't visit those right now
+    } else if (!a->type->collection) {
+      out << "    " << "this->" << a->name->id << "->accept(visitor);" << endl;
+    } else {
+      out << "    " << "for (auto& item : " << a->name->id << ") {" << endl;
+      out << "      " << "item->accept(visitor);"<<endl;
+      out << "    " << "}"<<endl;
+    }
+  }
+  out << "    " << "visitor.visitPost(*this);" << endl;
+  out << "  " << "}" << endl;
+  
+  // Struct close
+  out << "};" << endl << endl;
   
   // ostream operator
-  out << "std::ostream& operator<< (std::ostream& out,const " << node->name->id << "& node) {" << endl;
-  out << "  " << "out << \"(" << node->name->id << ": \";" << endl;
-  for (auto& a : node->attributes) {      
+  out << "std::ostream& operator<< (std::ostream& out,const " << node.name->id << "& node) {" << endl;
+  out << "  " << "out << \"(" << node.name->id << ": \";" << endl;
+  for (auto& a : node.attributes) {      
     if (a->type->collection) {
       out << "  out << \"[\";" << endl;
       out << "  " << "for (auto& item : node." << a->name->id << ") {" << endl;
@@ -110,16 +135,28 @@ void generate(unique_ptr<Node>& node) {
   out << "}" << endl << endl << endl;
 }
 
+struct CompileVisitor : public Visitor {
+  void visitPost(const Nodes& node) {
+    auto& n=node.nodes;
+    generateForwards(n); 
+    generateVisitor(n); 
+    for (auto& item : n) { 
+      generate(*reinterpret_cast<Node*>(item.get())); 
+    }
+  }
+};
+
 %}
 
-grammar = (- astnode -)* !.
+grammar = (- @n:astnode -)* !.              { $$ = make_unique<Nodes>(move(n)); }
+
 id = <[a-zA-Z0-9_]+>                        { $$ = make_unique<Id>(yytext); }
 type = ('[' - i:id - ']')                   { $$ = make_unique<Type>(move(i),true); }
      | i:id                                 { $$ = make_unique<Type>(move(i),false); }
 attribute = - i:id - ':' - t:type -         { $$ = make_unique<Attribute>(move(i),move(t)); }
 astnode = i:id -
           '(' - @a:attribute? 
-          (-',' - @a:attribute - )*-')'     { current_node=make_unique<Node>(move(i),move(a)); generate(current_node); }
+          (-',' - @a:attribute - )*-')'     { $$ = make_unique<Node>(move(i),move(a)); }
 
 -             = comment | space
 space         = [ \t\r\n]*
@@ -133,7 +170,7 @@ int main()
   GREG g;
   GREG *G=&g;
   
-  out << "struct Ast { virtual void can_dynamic_cast() {} };" << endl;
+  out << "struct Visitor; struct Ast { virtual void can_dynamic_cast() {} virtual void accept(Visitor&)=0; };" << endl;
   out << "std::ostream& operator<< (std::ostream& out,const Ast& node) { out << \"(Ast)\"; }" << endl;
   out << "using std::string;" << endl << endl;
 
@@ -160,6 +197,8 @@ int main()
     cerr << "Line " << line << ", column " << col << " ";
     cerr << "Can not parse: \"" << &G->buf[G->maxPos] << "\"" << endl;
   }
+  CompileVisitor c;
+  G->ss->accept(c);
   yydeinit(G);
   return 0;
 }

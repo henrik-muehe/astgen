@@ -1,12 +1,40 @@
-struct Ast { virtual void can_dynamic_cast() {} };
+struct Visitor; struct Ast { virtual void can_dynamic_cast() {} virtual void accept(Visitor&)=0; };
 std::ostream& operator<< (std::ostream& out,const Ast& node) { out << "(Ast)"; }
 using std::string;
+
+// Forward declarations
+struct Id;
+struct Type;
+struct Attribute;
+struct Node;
+struct Nodes;
+
+// Visitor base class
+struct Visitor {
+  virtual void visitPre(const Ast&) {}
+  virtual void visitPost(const Ast&) {}
+  virtual void visitPre(const Id&) {}
+  virtual void visitPost(const Id&) {}
+  virtual void visitPre(const Type&) {}
+  virtual void visitPost(const Type&) {}
+  virtual void visitPre(const Attribute&) {}
+  virtual void visitPost(const Attribute&) {}
+  virtual void visitPre(const Node&) {}
+  virtual void visitPost(const Node&) {}
+  virtual void visitPre(const Nodes&) {}
+  virtual void visitPost(const Nodes&) {}
+};
 
 struct Id : public Ast {
   string id;
 
   Id(const string& id) {
     this->id=id;
+  }
+
+  void accept(Visitor& visitor) {
+    visitor.visitPre(*this);
+    visitor.visitPost(*this);
   }
 };
 
@@ -27,6 +55,12 @@ struct Type : public Ast {
     id.release();
 
     this->collection=collection;
+  }
+
+  void accept(Visitor& visitor) {
+    visitor.visitPre(*this);
+    this->id->accept(visitor);
+    visitor.visitPost(*this);
   }
 };
 
@@ -52,6 +86,13 @@ struct Attribute : public Ast {
     type.release();
 
   }
+
+  void accept(Visitor& visitor) {
+    visitor.visitPre(*this);
+    this->name->accept(visitor);
+    this->type->accept(visitor);
+    visitor.visitPost(*this);
+  }
 };
 
 std::ostream& operator<< (std::ostream& out,const Attribute& node) {
@@ -76,6 +117,15 @@ struct Node : public Ast {
       item.release();
     }
   }
+
+  void accept(Visitor& visitor) {
+    visitor.visitPre(*this);
+    this->name->accept(visitor);
+    for (auto& item : attributes) {
+      item->accept(visitor);
+    }
+    visitor.visitPost(*this);
+  }
 };
 
 std::ostream& operator<< (std::ostream& out,const Node& node) {
@@ -83,6 +133,36 @@ std::ostream& operator<< (std::ostream& out,const Node& node) {
   out << *node.name;
   out << "[";
   for (auto& item : node.attributes) {
+    out << *item;
+  }
+  out << "]";
+  out << ")";
+}
+
+
+struct Nodes : public Ast {
+  std::vector<std::unique_ptr<Node>> nodes;
+
+  Nodes(std::vector<std::unique_ptr<Ast>>&& nodes) {
+    for (auto& item : nodes) {
+      this->nodes.push_back(std::unique_ptr<Node>(dynamic_cast<Node*>(item.get())));
+      item.release();
+    }
+  }
+
+  void accept(Visitor& visitor) {
+    visitor.visitPre(*this);
+    for (auto& item : nodes) {
+      item->accept(visitor);
+    }
+    visitor.visitPost(*this);
+  }
+};
+
+std::ostream& operator<< (std::ostream& out,const Nodes& node) {
+  out << "(Nodes: ";
+  out << "[";
+  for (auto& item : node.nodes) {
     out << *item;
   }
   out << "]";
