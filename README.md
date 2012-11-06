@@ -1,7 +1,7 @@
 ASTGEN
 ======
 
-Simple generator for C++ ASTs, requires henrik-muehe/greg fork of greg to compile. 
+Simple generator for C++ ASTs, requires henrik-muehe/greg-cpp fork of greg to compile. 
 Generates AST nodes containing basic types, other AST nodes or collections of other
 AST nodes.
 
