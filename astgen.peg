@@ -35,13 +35,33 @@ void generateForwards(const std::vector<std::unique_ptr<Node>>& nodes) {
 void generateVisitor(const std::vector<std::unique_ptr<Node>>& nodes) {
   out << "// Visitor base class" << endl;
   out << "struct Visitor {" << endl;
-  out << "  virtual void visitPre(const Ast&) {}" << endl;
-  out << "  virtual void visitPost(const Ast&) {}" << endl;
+  out << "  virtual void visitPre(const std::string& name,const Ast&) {}" << endl;
+  out << "  virtual void visitPost(const std::string& name,const Ast&) {}" << endl;
+  out << "  virtual void collectionPre() {}" << endl;
+  out << "  virtual void collectionPost() {}" << endl;
   for (auto& nodePtr : nodes) {
     Node& node=*reinterpret_cast<Node*>(nodePtr.get());
     
-    out << "  virtual void visitPre(const "<<node.name->id<<"&) {}" << endl;
-    out << "  virtual void visitPost(const "<<node.name->id<<"&) {}" << endl;
+    out << "  virtual void visitPre(const std::string& name,const "<<node.name->id<<"&) {}" << endl;
+    out << "  virtual void visitPost(const std::string& name,const "<<node.name->id<<"&) {}" << endl;
+  }
+  out << "};" << endl << endl;
+}
+
+void generatePrettyPrintVisitor(const std::vector<std::unique_ptr<Node>>& nodes) {
+  out << "// Pretty Print Visitor" << endl;
+  out << "struct PrettyPrintVisitor : public Visitor {" << endl;
+  out << "  std::stack<bool> doIndent;" << endl;
+  out << "  void applyIndent() { if (doIndent.top()) { std::cerr << std::string(doIndent.size()*2,' '); } }" << endl;
+  out << "  void applyNl() { if (doIndent.top()) { std::cerr << std::endl; } }" << endl;
+  out << "  PrettyPrintVisitor() : indent(0) { doIndent.push(false); }" << endl;
+  out << "  void collectionPre() { applyIndent(); std::cerr << \"[\" << std::endl; doIndent.push(true); }" << endl;
+  out << "  void collectionPost() { doIndent.pop(); std::cerr << std::string(indent,' ') << \"]\" << std::endl; }" << endl;
+  for (auto& nodePtr : nodes) {
+    Node& node=*reinterpret_cast<Node*>(nodePtr.get());
+    
+    out << "  virtual void visitPre(const std::string& name,const "<<node.name->id<<"& n) { applyIndent(); std::cerr << \"(\" << name << \":" << node.name->id <<" \"; doIndent.push(false); }" << endl;
+    out << "  virtual void visitPost(const std::string& name,const "<<node.name->id<<"& n) { applyIndent(); doIndent.pop(); std::cerr << \")\"; applyNl(); }" << endl;
   }
   out << "};" << endl << endl;
 }
@@ -94,20 +114,22 @@ void generate(Node& node) {
   out << "  }" << endl << endl;
   
   // Visitor accept
-  out << "  " << "void accept(Visitor& visitor) {" << endl;
-  out << "    " << "visitor.visitPre(*this);" << endl;
+  out << "  " << "void accept(const std::string& name,Visitor& visitor) {" << endl;
+  out << "    " << "visitor.visitPre(name,*this);" << endl;
   for (auto& a : node.attributes) {      
     if (simpleType(a->type->id->id)) {
       // We don't visit those right now
     } else if (!a->type->collection) {
-      out << "    " << "this->" << a->name->id << "->accept(visitor);" << endl;
+      out << "    " << "this->" << a->name->id << "->accept(\""<< a->name->id <<"\",visitor);" << endl;
     } else {
+      out << "    " << "visitor.collectionPre();" << endl;
       out << "    " << "for (auto& item : " << a->name->id << ") {" << endl;
-      out << "      " << "item->accept(visitor);"<<endl;
+      out << "      " << "item->accept(\""<< a->name->id <<"\",visitor);"<<endl;
       out << "    " << "}"<<endl;
+      out << "    " << "visitor.collectionPost();" << endl;
     }
   }
-  out << "    " << "visitor.visitPost(*this);" << endl;
+  out << "    " << "visitor.visitPost(name,*this);" << endl;
   out << "  " << "}" << endl;
   
   // Struct close
@@ -136,13 +158,14 @@ void generate(Node& node) {
 }
 
 struct CompileVisitor : public Visitor {
-  void visitPost(const Nodes& node) {
+  void visitPost(const std::string& name,const Nodes& node) {
     auto& n=node.nodes;
     generateForwards(n); 
     generateVisitor(n); 
     for (auto& item : n) { 
       generate(*reinterpret_cast<Node*>(item.get())); 
     }
+    generatePrettyPrintVisitor(n);
   }
 };
 
@@ -170,7 +193,7 @@ int main()
   GREG g;
   GREG *G=&g;
   
-  out << "struct Visitor; struct Ast { virtual void can_dynamic_cast() {} virtual void accept(Visitor&)=0; };" << endl;
+  out << "struct Visitor; struct Ast { virtual void can_dynamic_cast() {} virtual void accept(const std::string&,Visitor&)=0; };" << endl;
   out << "std::ostream& operator<< (std::ostream& out,const Ast& node) { out << \"(Ast)\"; }" << endl;
   out << "using std::string;" << endl << endl;
 
@@ -198,7 +221,9 @@ int main()
     cerr << "Can not parse: \"" << &G->buf[G->maxPos] << "\"" << endl;
   }
   CompileVisitor c;
-  G->ss->accept(c);
+  G->ss->accept("root",c);
+  PrettyPrintVisitor p;
+  G->ss->accept("root",p);
   yydeinit(G);
   return 0;
 }

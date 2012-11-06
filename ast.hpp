@@ -1,4 +1,4 @@
-struct Visitor; struct Ast { virtual void can_dynamic_cast() {} virtual void accept(Visitor&)=0; };
+struct Visitor; struct Ast { virtual void can_dynamic_cast() {} virtual void accept(const std::string&,Visitor&)=0; };
 std::ostream& operator<< (std::ostream& out,const Ast& node) { out << "(Ast)"; }
 using std::string;
 
@@ -11,18 +11,20 @@ struct Nodes;
 
 // Visitor base class
 struct Visitor {
-  virtual void visitPre(const Ast&) {}
-  virtual void visitPost(const Ast&) {}
-  virtual void visitPre(const Id&) {}
-  virtual void visitPost(const Id&) {}
-  virtual void visitPre(const Type&) {}
-  virtual void visitPost(const Type&) {}
-  virtual void visitPre(const Attribute&) {}
-  virtual void visitPost(const Attribute&) {}
-  virtual void visitPre(const Node&) {}
-  virtual void visitPost(const Node&) {}
-  virtual void visitPre(const Nodes&) {}
-  virtual void visitPost(const Nodes&) {}
+  virtual void visitPre(const std::string& name,const Ast&) {}
+  virtual void visitPost(const std::string& name,const Ast&) {}
+  virtual void collectionPre() {}
+  virtual void collectionPost() {}
+  virtual void visitPre(const std::string& name,const Id&) {}
+  virtual void visitPost(const std::string& name,const Id&) {}
+  virtual void visitPre(const std::string& name,const Type&) {}
+  virtual void visitPost(const std::string& name,const Type&) {}
+  virtual void visitPre(const std::string& name,const Attribute&) {}
+  virtual void visitPost(const std::string& name,const Attribute&) {}
+  virtual void visitPre(const std::string& name,const Node&) {}
+  virtual void visitPost(const std::string& name,const Node&) {}
+  virtual void visitPre(const std::string& name,const Nodes&) {}
+  virtual void visitPost(const std::string& name,const Nodes&) {}
 };
 
 struct Id : public Ast {
@@ -32,9 +34,9 @@ struct Id : public Ast {
     this->id=id;
   }
 
-  void accept(Visitor& visitor) {
-    visitor.visitPre(*this);
-    visitor.visitPost(*this);
+  void accept(const std::string& name,Visitor& visitor) {
+    visitor.visitPre(name,*this);
+    visitor.visitPost(name,*this);
   }
 };
 
@@ -57,10 +59,10 @@ struct Type : public Ast {
     this->collection=collection;
   }
 
-  void accept(Visitor& visitor) {
-    visitor.visitPre(*this);
-    this->id->accept(visitor);
-    visitor.visitPost(*this);
+  void accept(const std::string& name,Visitor& visitor) {
+    visitor.visitPre(name,*this);
+    this->id->accept("id",visitor);
+    visitor.visitPost(name,*this);
   }
 };
 
@@ -87,11 +89,11 @@ struct Attribute : public Ast {
 
   }
 
-  void accept(Visitor& visitor) {
-    visitor.visitPre(*this);
-    this->name->accept(visitor);
-    this->type->accept(visitor);
-    visitor.visitPost(*this);
+  void accept(const std::string& name,Visitor& visitor) {
+    visitor.visitPre(name,*this);
+    this->name->accept("name",visitor);
+    this->type->accept("type",visitor);
+    visitor.visitPost(name,*this);
   }
 };
 
@@ -118,13 +120,15 @@ struct Node : public Ast {
     }
   }
 
-  void accept(Visitor& visitor) {
-    visitor.visitPre(*this);
-    this->name->accept(visitor);
+  void accept(const std::string& name,Visitor& visitor) {
+    visitor.visitPre(name,*this);
+    this->name->accept("name",visitor);
+    visitor.collectionPre();
     for (auto& item : attributes) {
-      item->accept(visitor);
+      item->accept("attributes",visitor);
     }
-    visitor.visitPost(*this);
+    visitor.collectionPost();
+    visitor.visitPost(name,*this);
   }
 };
 
@@ -150,12 +154,14 @@ struct Nodes : public Ast {
     }
   }
 
-  void accept(Visitor& visitor) {
-    visitor.visitPre(*this);
+  void accept(const std::string& name,Visitor& visitor) {
+    visitor.visitPre(name,*this);
+    visitor.collectionPre();
     for (auto& item : nodes) {
-      item->accept(visitor);
+      item->accept("nodes",visitor);
     }
-    visitor.visitPost(*this);
+    visitor.collectionPost();
+    visitor.visitPost(name,*this);
   }
 };
 
@@ -169,4 +175,24 @@ std::ostream& operator<< (std::ostream& out,const Nodes& node) {
   out << ")";
 }
 
+
+// Pretty Print Visitor
+struct PrettyPrintVisitor : public Visitor {
+  std::stack<bool> doIndent;
+  void applyIndent() { if (doIndent.top()) { std::cerr << std::string(doIndent.size()*2,' '); } }
+  void applyNl() { if (doIndent.top()) { std::cerr << std::endl; } }
+  PrettyPrintVisitor() : indent(0) { doIndent.push(false); }
+  void collectionPre() { applyIndent(); std::cerr << "[" << std::endl; doIndent.push(true); }
+  void collectionPost() { doIndent.pop(); std::cerr << std::string(indent,' ') << "]" << std::endl; }
+  virtual void visitPre(const std::string& name,const Id& n) { applyIndent(); std::cerr << "(" << name << ":Id "; doIndent.push(false); }
+  virtual void visitPost(const std::string& name,const Id& n) { applyIndent(); doIndent.pop(); std::cerr << ")"; applyNl(); }
+  virtual void visitPre(const std::string& name,const Type& n) { applyIndent(); std::cerr << "(" << name << ":Type "; doIndent.push(false); }
+  virtual void visitPost(const std::string& name,const Type& n) { applyIndent(); doIndent.pop(); std::cerr << ")"; applyNl(); }
+  virtual void visitPre(const std::string& name,const Attribute& n) { applyIndent(); std::cerr << "(" << name << ":Attribute "; doIndent.push(false); }
+  virtual void visitPost(const std::string& name,const Attribute& n) { applyIndent(); doIndent.pop(); std::cerr << ")"; applyNl(); }
+  virtual void visitPre(const std::string& name,const Node& n) { applyIndent(); std::cerr << "(" << name << ":Node "; doIndent.push(false); }
+  virtual void visitPost(const std::string& name,const Node& n) { applyIndent(); doIndent.pop(); std::cerr << ")"; applyNl(); }
+  virtual void visitPre(const std::string& name,const Nodes& n) { applyIndent(); std::cerr << "(" << name << ":Nodes "; doIndent.push(false); }
+  virtual void visitPost(const std::string& name,const Nodes& n) { applyIndent(); doIndent.pop(); std::cerr << ")"; applyNl(); }
+};
 
