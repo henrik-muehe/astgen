@@ -1,5 +1,8 @@
+CXX?=g++
+CXXFLAGS?=-O0 -g -std=c++0x
+
 all: main
 
 main:
 	../greg/greg astgen.peg > astgen.cpp
-	$(CXX) -std=c++0x -O0 -g -o astgen astgen.cpp
+	$(CXX) $(CXXFLAGS) -o astgen astgen.cpp

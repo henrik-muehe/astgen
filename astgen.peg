@@ -52,16 +52,16 @@ void generatePrettyPrintVisitor(const std::vector<std::unique_ptr<Node>>& nodes)
   out << "// Pretty Print Visitor" << endl;
   out << "struct PrettyPrintVisitor : public Visitor {" << endl;
   out << "  std::stack<bool> doIndent;" << endl;
-  out << "  void applyIndent() { if (doIndent.top()) { std::cerr << std::string(doIndent.size()*2,' '); } }" << endl;
+  out << "  void applyIndent(int64_t mod=0) { if (doIndent.top()) { std::cerr << std::string((doIndent.size()+mod)*2,' '); } }" << endl;
   out << "  void applyNl() { if (doIndent.top()) { std::cerr << std::endl; } }" << endl;
-  out << "  PrettyPrintVisitor() : indent(0) { doIndent.push(false); }" << endl;
+  out << "  PrettyPrintVisitor() { doIndent.push(false); }" << endl;
   out << "  void collectionPre() { applyIndent(); std::cerr << \"[\" << std::endl; doIndent.push(true); }" << endl;
-  out << "  void collectionPost() { doIndent.pop(); std::cerr << std::string(indent,' ') << \"]\" << std::endl; }" << endl;
+  out << "  void collectionPost() { applyIndent(-1); doIndent.pop(); std::cerr << \"]\" << std::endl; }" << endl;
   for (auto& nodePtr : nodes) {
     Node& node=*reinterpret_cast<Node*>(nodePtr.get());
     
     out << "  virtual void visitPre(const std::string& name,const "<<node.name->id<<"& n) { applyIndent(); std::cerr << \"(\" << name << \":" << node.name->id <<" \"; doIndent.push(false); }" << endl;
-    out << "  virtual void visitPost(const std::string& name,const "<<node.name->id<<"& n) { applyIndent(); doIndent.pop(); std::cerr << \")\"; applyNl(); }" << endl;
+    out << "  virtual void visitPost(const std::string& name,const "<<node.name->id<<"& n) { doIndent.pop(); applyIndent(); std::cerr << \")\"; applyNl(); }" << endl;
   }
   out << "};" << endl << endl;
 }

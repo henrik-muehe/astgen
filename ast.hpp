@@ -179,20 +179,20 @@ std::ostream& operator<< (std::ostream& out,const Nodes& node) {
 // Pretty Print Visitor
 struct PrettyPrintVisitor : public Visitor {
   std::stack<bool> doIndent;
-  void applyIndent() { if (doIndent.top()) { std::cerr << std::string(doIndent.size()*2,' '); } }
+  void applyIndent(int64_t mod=0) { if (doIndent.top()) { std::cerr << std::string((doIndent.size()+mod)*2,' '); } }
   void applyNl() { if (doIndent.top()) { std::cerr << std::endl; } }
-  PrettyPrintVisitor() : indent(0) { doIndent.push(false); }
+  PrettyPrintVisitor() { doIndent.push(false); }
   void collectionPre() { applyIndent(); std::cerr << "[" << std::endl; doIndent.push(true); }
-  void collectionPost() { doIndent.pop(); std::cerr << std::string(indent,' ') << "]" << std::endl; }
+  void collectionPost() { applyIndent(-1); doIndent.pop(); std::cerr << "]" << std::endl; }
   virtual void visitPre(const std::string& name,const Id& n) { applyIndent(); std::cerr << "(" << name << ":Id "; doIndent.push(false); }
-  virtual void visitPost(const std::string& name,const Id& n) { applyIndent(); doIndent.pop(); std::cerr << ")"; applyNl(); }
+  virtual void visitPost(const std::string& name,const Id& n) { doIndent.pop(); applyIndent(); std::cerr << ")"; applyNl(); }
   virtual void visitPre(const std::string& name,const Type& n) { applyIndent(); std::cerr << "(" << name << ":Type "; doIndent.push(false); }
-  virtual void visitPost(const std::string& name,const Type& n) { applyIndent(); doIndent.pop(); std::cerr << ")"; applyNl(); }
+  virtual void visitPost(const std::string& name,const Type& n) { doIndent.pop(); applyIndent(); std::cerr << ")"; applyNl(); }
   virtual void visitPre(const std::string& name,const Attribute& n) { applyIndent(); std::cerr << "(" << name << ":Attribute "; doIndent.push(false); }
-  virtual void visitPost(const std::string& name,const Attribute& n) { applyIndent(); doIndent.pop(); std::cerr << ")"; applyNl(); }
+  virtual void visitPost(const std::string& name,const Attribute& n) { doIndent.pop(); applyIndent(); std::cerr << ")"; applyNl(); }
   virtual void visitPre(const std::string& name,const Node& n) { applyIndent(); std::cerr << "(" << name << ":Node "; doIndent.push(false); }
-  virtual void visitPost(const std::string& name,const Node& n) { applyIndent(); doIndent.pop(); std::cerr << ")"; applyNl(); }
+  virtual void visitPost(const std::string& name,const Node& n) { doIndent.pop(); applyIndent(); std::cerr << ")"; applyNl(); }
   virtual void visitPre(const std::string& name,const Nodes& n) { applyIndent(); std::cerr << "(" << name << ":Nodes "; doIndent.push(false); }
-  virtual void visitPost(const std::string& name,const Nodes& n) { applyIndent(); doIndent.pop(); std::cerr << ")"; applyNl(); }
+  virtual void visitPost(const std::string& name,const Nodes& n) { doIndent.pop(); applyIndent(); std::cerr << ")"; applyNl(); }
 };
 
