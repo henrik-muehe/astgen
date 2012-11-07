@@ -2,6 +2,23 @@ struct Visitor; struct Ast { virtual void can_dynamic_cast() {} virtual void acc
 std::ostream& operator<< (std::ostream& out,const Ast& node) { out << "(Ast)"; }
 using std::string;
 
+struct Collection : Ast {
+  void accept(const string&, Visitor&) {};
+  std::vector<std::unique_ptr<Ast>> items; 
+  void push_back(std::unique_ptr<Ast>&& item) { items.push_back(std::move(item)); } 
+  std::vector<std::unique_ptr<Ast>>& get() { return items; }
+};
+
+template<class T,class S>
+T tryCast(S s) {
+  T t=dynamic_cast<T>(s);
+  if (!t) {
+    std::cerr << "AST type mismatch." << std::endl;
+    throw;
+  }
+  return t;
+}
+
 // Forward declarations
 struct Id;
 struct Type;
@@ -52,8 +69,7 @@ struct Type : public Ast {
   bool collection;
 
   Type(std::unique_ptr<Ast>&& id,const bool& collection) {
-    this->id=std::unique_ptr<Id>(dynamic_cast<Id*>(id.get()));
-    if (!this->id) { std::cerr << "AST type failure for Type attribute id" << std::endl; throw; }
+    this->id=std::unique_ptr<Id>(tryCast<Id*>(id.get()));
     id.release();
 
     this->collection=collection;
@@ -79,12 +95,10 @@ struct Attribute : public Ast {
   std::unique_ptr<Type> type;
 
   Attribute(std::unique_ptr<Ast>&& name,std::unique_ptr<Ast>&& type) {
-    this->name=std::unique_ptr<Id>(dynamic_cast<Id*>(name.get()));
-    if (!this->name) { std::cerr << "AST type failure for Attribute attribute name" << std::endl; throw; }
+    this->name=std::unique_ptr<Id>(tryCast<Id*>(name.get()));
     name.release();
 
-    this->type=std::unique_ptr<Type>(dynamic_cast<Type*>(type.get()));
-    if (!this->type) { std::cerr << "AST type failure for Attribute attribute type" << std::endl; throw; }
+    this->type=std::unique_ptr<Type>(tryCast<Type*>(type.get()));
     type.release();
 
   }
@@ -109,13 +123,13 @@ struct Node : public Ast {
   std::unique_ptr<Id> name;
   std::vector<std::unique_ptr<Attribute>> attributes;
 
-  Node(std::unique_ptr<Ast>&& name,std::vector<std::unique_ptr<Ast>>&& attributes) {
-    this->name=std::unique_ptr<Id>(dynamic_cast<Id*>(name.get()));
-    if (!this->name) { std::cerr << "AST type failure for Node attribute name" << std::endl; throw; }
+  Node(std::unique_ptr<Ast>&& name,std::unique_ptr<Ast>&& attributes) {
+    this->name=std::unique_ptr<Id>(tryCast<Id*>(name.get()));
     name.release();
 
-    for (auto& item : attributes) {
-      this->attributes.push_back(std::unique_ptr<Attribute>(dynamic_cast<Attribute*>(item.get())));
+    if (attributes.get())
+    for (auto& item : tryCast<Collection*>(attributes.get())->get()) {
+      this->attributes.push_back(std::unique_ptr<Attribute>(tryCast<Attribute*>(item.get())));
       item.release();
     }
   }
@@ -147,9 +161,10 @@ std::ostream& operator<< (std::ostream& out,const Node& node) {
 struct Nodes : public Ast {
   std::vector<std::unique_ptr<Node>> nodes;
 
-  Nodes(std::vector<std::unique_ptr<Ast>>&& nodes) {
-    for (auto& item : nodes) {
-      this->nodes.push_back(std::unique_ptr<Node>(dynamic_cast<Node*>(item.get())));
+  Nodes(std::unique_ptr<Ast>&& nodes) {
+    if (nodes.get())
+    for (auto& item : tryCast<Collection*>(nodes.get())->get()) {
+      this->nodes.push_back(std::unique_ptr<Node>(tryCast<Node*>(item.get())));
       item.release();
     }
   }

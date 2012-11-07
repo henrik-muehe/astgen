@@ -18,6 +18,8 @@ using namespace std;
 
 auto& out = cout;
 #define YYSTYPE std::unique_ptr<Ast>
+#define YY_CTYPE Collection
+#define YY_CTYPE_DEFINITION() ;
 
 static bool simpleType(std::string tn) {
   return (tn=="bool"||tn=="integer"||tn=="string"||tn=="int64_t");
@@ -90,7 +92,7 @@ void generate(Node& node) {
     } else if (!a->type->collection) {
       out << "std::unique_ptr<Ast>&& " << a->name->id;
     } else {
-      out << "std::vector<std::unique_ptr<Ast>>&& " << a->name->id;
+      out << "std::unique_ptr<Ast>&& " << a->name->id;
     }
   }
   out << ") {" << endl;
@@ -100,13 +102,13 @@ void generate(Node& node) {
     if (simpleType(a->type->id->id)) {
       out << "    " << "this->" << a->name->id << "=" << a->name->id << ";" << endl;
     } else if (!a->type->collection) {
-      out << "    " << "this->" << a->name->id << "=std::unique_ptr<" << a->type->id->id << ">(dynamic_cast<" << a->type->id->id << "*>(" << a->name->id << ".get()));" << endl;
-      out << "    " << "if (!this->" << a->name->id << ") { std::cerr << \"AST type failure for " << node.name->id << " attribute " << a->name->id << "\" << std::endl; throw; }" << std::endl;
+      out << "    " << "this->" << a->name->id << "=std::unique_ptr<" << a->type->id->id << ">(tryCast<" << a->type->id->id << "*>(" << a->name->id << ".get()));" << endl;
       out << "    " << a->name->id << ".release();" << endl;
       out << endl;
     } else {
-      out << "    " << "for (auto& item : " << a->name->id << ") {" << endl;
-      out << "      " << "this->" << a->name->id << ".push_back(std::unique_ptr<"<< a->type->id->id <<">(dynamic_cast<"<< a->type->id->id << "*>(item.get())));" << endl;
+      out << "    " << "if (" << a->name->id << ".get())" << endl;
+      out << "    " << "for (auto& item : tryCast<Collection*>(" << a->name->id << ".get())->get()) {" << endl;
+      out << "      " << "this->" << a->name->id << ".push_back(std::unique_ptr<"<< a->type->id->id <<">(tryCast<"<< a->type->id->id << "*>(item.get())));" << endl;
       out << "      " << "item.release();"<<endl;
       out << "    " << "}"<<endl;
     }
@@ -160,6 +162,26 @@ void generate(Node& node) {
 struct CompileVisitor : public Visitor {
   void visitPost(const std::string& name,const Nodes& node) {
     auto& n=node.nodes;
+
+    out << "struct Visitor; struct Ast { virtual void can_dynamic_cast() {} virtual void accept(const std::string&,Visitor&)=0; };" << endl;
+    out << "std::ostream& operator<< (std::ostream& out,const Ast& node) { out << \"(Ast)\"; }" << endl;
+    out << "using std::string;" << endl << endl;
+    out << "struct Collection : Ast {" <<endl;
+    out << "  void accept(const string&, Visitor&) {};" << endl;
+    out << "  std::vector<std::unique_ptr<Ast>> items; " << endl;
+    out << "  void push_back(std::unique_ptr<Ast>&& item) { items.push_back(std::move(item)); } " << endl;
+    out << "  std::vector<std::unique_ptr<Ast>>& get() { return items; }" << endl;
+    out << "};" << endl << endl;
+    out << "template<class T,class S>" << endl;
+    out << "T tryCast(S s) {" << endl;
+    out << "  T t=dynamic_cast<T>(s);" << endl;
+    out << "  if (!t) {" << endl;
+    out << "    std::cerr << \"AST type mismatch.\" << std::endl;" << endl;
+    out << "    throw;" << endl;
+    out << "  }" << endl;
+    out << "  return t;" << endl;
+    out << "}" << endl << endl;
+
     generateForwards(n); 
     generateVisitor(n); 
     for (auto& item : n) { 
@@ -177,9 +199,8 @@ id = <[a-zA-Z0-9_]+>                        { $$ = make_unique<Id>(yytext); }
 type = ('[' - i:id - ']')                   { $$ = make_unique<Type>(move(i),true); }
      | i:id                                 { $$ = make_unique<Type>(move(i),false); }
 attribute = - i:id - ':' - t:type -         { $$ = make_unique<Attribute>(move(i),move(t)); }
-astnode = i:id -
-          '(' - @a:attribute? 
-          (-',' - @a:attribute - )*-')'     { $$ = make_unique<Node>(move(i),move(a)); }
+attribute_list = '(' - @a:attribute? - (',' - @a:attribute - )* - ')' { $$=move(a); }
+astnode = i:id - a:attribute_list           { $$ = make_unique<Node>(move(i),move(a)); }
 
 -             = comment | space
 space         = [ \t\r\n]*
@@ -193,10 +214,6 @@ int main()
   GREG g;
   GREG *G=&g;
   
-  out << "struct Visitor; struct Ast { virtual void can_dynamic_cast() {} virtual void accept(const std::string&,Visitor&)=0; };" << endl;
-  out << "std::ostream& operator<< (std::ostream& out,const Ast& node) { out << \"(Ast)\"; }" << endl;
-  out << "using std::string;" << endl << endl;
-
   yyinit(G);
   if (!yyparse(G)) {
     // Find current line
@@ -220,10 +237,11 @@ int main()
     cerr << "Line " << line << ", column " << col << " ";
     cerr << "Can not parse: \"" << &G->buf[G->maxPos] << "\"" << endl;
   }
+
   CompileVisitor c;
   G->ss->accept("root",c);
-  PrettyPrintVisitor p;
-  G->ss->accept("root",p);
+  
+  PrettyPrintVisitor p; G->ss->accept("root",p); cerr << endl;
   yydeinit(G);
   return 0;
 }

@@ -6,3 +6,6 @@ all: main
 main:
 	../greg/greg astgen.peg > astgen.cpp
 	$(CXX) $(CXXFLAGS) -o astgen astgen.cpp
+
+ast:
+	cat astgen_ast.ast | ./astgen > ast.hpp
