@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <ctemplate/template.h>
 
 template<typename T, typename ...Args>
 std::unique_ptr<T> make_unique( Args&& ...args )
@@ -22,7 +23,7 @@ auto& out = cout;
 #define YY_CTYPE_DEFINITION() ;
 
 static bool simpleType(std::string tn) {
-  return (tn=="bool"||tn=="integer"||tn=="string"||tn=="int64_t");
+  return (tn=="bool"||tn=="string"||tn=="int64_t");
 }
 
 void generateForwards(const std::vector<std::unique_ptr<Node>>& nodes) {
@@ -39,6 +40,10 @@ void generateVisitor(const std::vector<std::unique_ptr<Node>>& nodes) {
   out << "struct Visitor {" << endl;
   out << "  virtual void visitPre(const std::string& name,const Ast&) {}" << endl;
   out << "  virtual void visitPost(const std::string& name,const Ast&) {}" << endl;
+  out << "  virtual void visitPre(const std::string& name,const Collection&) {}" << endl;
+  out << "  virtual void visitPost(const std::string& name,const Collection&) {}" << endl;
+  out << "  virtual void visit(const std::string& name,const int64_t&) {}" << endl;
+  out << "  virtual void visit(const std::string& name,const std::string&) {}" << endl;
   out << "  virtual void collectionPre() {}" << endl;
   out << "  virtual void collectionPost() {}" << endl;
   for (auto& nodePtr : nodes) {
@@ -50,22 +55,73 @@ void generateVisitor(const std::vector<std::unique_ptr<Node>>& nodes) {
   out << "};" << endl << endl;
 }
 
+static std::string prettyPrinterTemplate = R"tpl(
+struct PrettyPrintVisitor : public Visitor {
+  std::stack<bool> indentScopes;
+  uint64_t indentDepth=0;
+  
+  void pushScope(bool indent=false) { indentScopes.push(indent); indentDepth+=indent; }
+  void popScope() { indentDepth-=indentScopes.top(); indentScopes.pop(); }
+  
+  void applyIndent(int64_t mod=0) { 
+    if (indentScopes.top()) { 
+      std::cerr << std::string((indentDepth+mod)*2,' '); 
+    } 
+  }
+  
+  void applyNl() { 
+    if (indentScopes.top()) 
+      std::cerr << std::endl;
+  }
+  
+  PrettyPrintVisitor() { pushScope(); }
+  
+  void collectionPre() { 
+    applyIndent();
+    std::cerr << "[" << std::endl; 
+    pushScope(true);
+  }
+  
+  void collectionPost() { 
+    applyIndent(-1); 
+    popScope();
+    std::cerr << "]";// << std::endl; 
+  }  
+  
+  {{#NODE_VISITORS}}
+  virtual void visitPre(const std::string& name,const {{NODE_NAME}}& n) { 
+    applyIndent(); 
+    std::cerr << "(" << "{{NODE_NAME}} " << name << "="; 
+    pushScope();
+  }
+  
+  virtual void visitPost(const std::string& name,const {{NODE_NAME}}& n) { 
+    applyIndent();
+    popScope();
+    std::cerr << ")"; 
+    applyNl(); 
+  }  
+  {{/NODE_VISITORS}}
+  
+  virtual void visit(const std::string& name,const int64_t& v) { std::cerr << "(" << name << "=" << "\"" << v << "\")"; }
+  virtual void visit(const std::string& name,const std::string& v) { std::cerr << "(" << name << "=" << "\"" << v << "\")"; }
+};
+)tpl"; //"
+
 void generatePrettyPrintVisitor(const std::vector<std::unique_ptr<Node>>& nodes) {
-  out << "// Pretty Print Visitor" << endl;
-  out << "struct PrettyPrintVisitor : public Visitor {" << endl;
-  out << "  std::stack<bool> doIndent;" << endl;
-  out << "  void applyIndent(int64_t mod=0) { if (doIndent.top()) { std::cerr << std::string((doIndent.size()+mod)*2,' '); } }" << endl;
-  out << "  void applyNl() { if (doIndent.top()) { std::cerr << std::endl; } }" << endl;
-  out << "  PrettyPrintVisitor() { doIndent.push(false); }" << endl;
-  out << "  void collectionPre() { applyIndent(); std::cerr << \"[\" << std::endl; doIndent.push(true); }" << endl;
-  out << "  void collectionPost() { applyIndent(-1); doIndent.pop(); std::cerr << \"]\" << std::endl; }" << endl;
+  ctemplate::StringToTemplateCache("ast_pretty_print",prettyPrinterTemplate.c_str(),ctemplate::DO_NOT_STRIP);
+  
+  ctemplate::TemplateDictionary dict("pretty printer");
   for (auto& nodePtr : nodes) {
     Node& node=*reinterpret_cast<Node*>(nodePtr.get());
     
-    out << "  virtual void visitPre(const std::string& name,const "<<node.name->id<<"& n) { applyIndent(); std::cerr << \"(\" << name << \":" << node.name->id <<" \"; doIndent.push(false); }" << endl;
-    out << "  virtual void visitPost(const std::string& name,const "<<node.name->id<<"& n) { doIndent.pop(); applyIndent(); std::cerr << \")\"; applyNl(); }" << endl;
+    auto nodeDict=dict.AddSectionDictionary("NODE_VISITORS");
+    nodeDict->SetValue("NODE_NAME",node.name->id);
   }
-  out << "};" << endl << endl;
+  
+  string output;
+  ctemplate::ExpandTemplate("ast_pretty_print",ctemplate::DO_NOT_STRIP,&dict,&output);
+  out << output << endl;
 }
 
 void generate(Node& node) {
@@ -121,12 +177,13 @@ void generate(Node& node) {
   for (auto& a : node.attributes) {      
     if (simpleType(a->type->id->id)) {
       // We don't visit those right now
+      out << "    " << "visitor.visit(\""<< a->name->id <<"\",this->" << a->name->id << ");" << endl;
     } else if (!a->type->collection) {
-      out << "    " << "this->" << a->name->id << "->accept(\""<< a->name->id <<"\",visitor);" << endl;
+      out << "    " << "if (this->"<<a->name->id<<".get()) this->" << a->name->id << "->accept(\""<< a->name->id <<"\",visitor);" << endl;
     } else {
       out << "    " << "visitor.collectionPre();" << endl;
       out << "    " << "for (auto& item : " << a->name->id << ") {" << endl;
-      out << "      " << "item->accept(\""<< a->name->id <<"\",visitor);"<<endl;
+      out << "      " << "if (item.get()) item->accept(\""<< a->name->id <<"\",visitor);"<<endl;
       out << "    " << "}"<<endl;
       out << "    " << "visitor.collectionPost();" << endl;
     }
@@ -163,7 +220,7 @@ struct CompileVisitor : public Visitor {
   void visitPost(const std::string& name,const Nodes& node) {
     auto& n=node.nodes;
 
-    out << "struct Visitor; struct Ast { virtual void can_dynamic_cast() {} virtual void accept(const std::string&,Visitor&)=0; };" << endl;
+    out << "struct Visitor; struct Ast { int64_t line; int64_t col; virtual void can_dynamic_cast() {} virtual void accept(const std::string&,Visitor&)=0; };" << endl;
     out << "std::ostream& operator<< (std::ostream& out,const Ast& node) { out << \"(Ast)\"; }" << endl;
     out << "using std::string;" << endl << endl;
     out << "struct Collection : Ast {" <<endl;
@@ -174,6 +231,7 @@ struct CompileVisitor : public Visitor {
     out << "};" << endl << endl;
     out << "template<class T,class S>" << endl;
     out << "T tryCast(S s) {" << endl;
+    out << "  if (!s) return 0;" << endl;
     out << "  T t=dynamic_cast<T>(s);" << endl;
     out << "  if (!t) {" << endl;
     out << "    std::cerr << \"AST type mismatch.\" << std::endl;" << endl;

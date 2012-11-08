@@ -1,4 +1,4 @@
-struct Visitor; struct Ast { virtual void can_dynamic_cast() {} virtual void accept(const std::string&,Visitor&)=0; };
+struct Visitor; struct Ast { int64_t line; int64_t col; virtual void can_dynamic_cast() {} virtual void accept(const std::string&,Visitor&)=0; };
 std::ostream& operator<< (std::ostream& out,const Ast& node) { out << "(Ast)"; }
 using std::string;
 
@@ -11,6 +11,7 @@ struct Collection : Ast {
 
 template<class T,class S>
 T tryCast(S s) {
+  if (!s) return 0;
   T t=dynamic_cast<T>(s);
   if (!t) {
     std::cerr << "AST type mismatch." << std::endl;
@@ -30,6 +31,10 @@ struct Nodes;
 struct Visitor {
   virtual void visitPre(const std::string& name,const Ast&) {}
   virtual void visitPost(const std::string& name,const Ast&) {}
+  virtual void visitPre(const std::string& name,const Collection&) {}
+  virtual void visitPost(const std::string& name,const Collection&) {}
+  virtual void visit(const std::string& name,const int64_t&) {}
+  virtual void visit(const std::string& name,const std::string&) {}
   virtual void collectionPre() {}
   virtual void collectionPost() {}
   virtual void visitPre(const std::string& name,const Id&) {}
@@ -53,6 +58,7 @@ struct Id : public Ast {
 
   void accept(const std::string& name,Visitor& visitor) {
     visitor.visitPre(name,*this);
+    visitor.visit("id",this->id);
     visitor.visitPost(name,*this);
   }
 };
@@ -77,7 +83,8 @@ struct Type : public Ast {
 
   void accept(const std::string& name,Visitor& visitor) {
     visitor.visitPre(name,*this);
-    this->id->accept("id",visitor);
+    if (this->id.get()) this->id->accept("id",visitor);
+    visitor.visit("collection",this->collection);
     visitor.visitPost(name,*this);
   }
 };
@@ -105,8 +112,8 @@ struct Attribute : public Ast {
 
   void accept(const std::string& name,Visitor& visitor) {
     visitor.visitPre(name,*this);
-    this->name->accept("name",visitor);
-    this->type->accept("type",visitor);
+    if (this->name.get()) this->name->accept("name",visitor);
+    if (this->type.get()) this->type->accept("type",visitor);
     visitor.visitPost(name,*this);
   }
 };
@@ -136,10 +143,10 @@ struct Node : public Ast {
 
   void accept(const std::string& name,Visitor& visitor) {
     visitor.visitPre(name,*this);
-    this->name->accept("name",visitor);
+    if (this->name.get()) this->name->accept("name",visitor);
     visitor.collectionPre();
     for (auto& item : attributes) {
-      item->accept("attributes",visitor);
+      if (item.get()) item->accept("attributes",visitor);
     }
     visitor.collectionPost();
     visitor.visitPost(name,*this);
@@ -173,7 +180,7 @@ struct Nodes : public Ast {
     visitor.visitPre(name,*this);
     visitor.collectionPre();
     for (auto& item : nodes) {
-      item->accept("nodes",visitor);
+      if (item.get()) item->accept("nodes",visitor);
     }
     visitor.collectionPost();
     visitor.visitPost(name,*this);
@@ -191,23 +198,107 @@ std::ostream& operator<< (std::ostream& out,const Nodes& node) {
 }
 
 
-// Pretty Print Visitor
+
 struct PrettyPrintVisitor : public Visitor {
-  std::stack<bool> doIndent;
-  void applyIndent(int64_t mod=0) { if (doIndent.top()) { std::cerr << std::string((doIndent.size()+mod)*2,' '); } }
-  void applyNl() { if (doIndent.top()) { std::cerr << std::endl; } }
-  PrettyPrintVisitor() { doIndent.push(false); }
-  void collectionPre() { applyIndent(); std::cerr << "[" << std::endl; doIndent.push(true); }
-  void collectionPost() { applyIndent(-1); doIndent.pop(); std::cerr << "]" << std::endl; }
-  virtual void visitPre(const std::string& name,const Id& n) { applyIndent(); std::cerr << "(" << name << ":Id "; doIndent.push(false); }
-  virtual void visitPost(const std::string& name,const Id& n) { doIndent.pop(); applyIndent(); std::cerr << ")"; applyNl(); }
-  virtual void visitPre(const std::string& name,const Type& n) { applyIndent(); std::cerr << "(" << name << ":Type "; doIndent.push(false); }
-  virtual void visitPost(const std::string& name,const Type& n) { doIndent.pop(); applyIndent(); std::cerr << ")"; applyNl(); }
-  virtual void visitPre(const std::string& name,const Attribute& n) { applyIndent(); std::cerr << "(" << name << ":Attribute "; doIndent.push(false); }
-  virtual void visitPost(const std::string& name,const Attribute& n) { doIndent.pop(); applyIndent(); std::cerr << ")"; applyNl(); }
-  virtual void visitPre(const std::string& name,const Node& n) { applyIndent(); std::cerr << "(" << name << ":Node "; doIndent.push(false); }
-  virtual void visitPost(const std::string& name,const Node& n) { doIndent.pop(); applyIndent(); std::cerr << ")"; applyNl(); }
-  virtual void visitPre(const std::string& name,const Nodes& n) { applyIndent(); std::cerr << "(" << name << ":Nodes "; doIndent.push(false); }
-  virtual void visitPost(const std::string& name,const Nodes& n) { doIndent.pop(); applyIndent(); std::cerr << ")"; applyNl(); }
+  std::stack<bool> indentScopes;
+  uint64_t indentDepth=0;
+  
+  void pushScope(bool indent=false) { indentScopes.push(indent); indentDepth+=indent; }
+  void popScope() { indentDepth-=indentScopes.top(); indentScopes.pop(); }
+  
+  void applyIndent(int64_t mod=0) { 
+    if (indentScopes.top()) { 
+      std::cerr << std::string((indentDepth+mod)*2,' '); 
+    } 
+  }
+  
+  void applyNl() { 
+    if (indentScopes.top()) 
+      std::cerr << std::endl;
+  }
+  
+  PrettyPrintVisitor() { pushScope(); }
+  
+  void collectionPre() { 
+    applyIndent();
+    std::cerr << "[" << std::endl; 
+    pushScope(true);
+  }
+  
+  void collectionPost() { 
+    applyIndent(-1); 
+    popScope();
+    std::cerr << "]";// << std::endl; 
+  }  
+  
+  
+  virtual void visitPre(const std::string& name,const Id& n) { 
+    applyIndent(); 
+    std::cerr << "(" << "Id " << name << "="; 
+    pushScope();
+  }
+  
+  virtual void visitPost(const std::string& name,const Id& n) { 
+    applyIndent();
+    popScope();
+    std::cerr << ")"; 
+    applyNl(); 
+  }  
+  
+  virtual void visitPre(const std::string& name,const Type& n) { 
+    applyIndent(); 
+    std::cerr << "(" << "Type " << name << "="; 
+    pushScope();
+  }
+  
+  virtual void visitPost(const std::string& name,const Type& n) { 
+    applyIndent();
+    popScope();
+    std::cerr << ")"; 
+    applyNl(); 
+  }  
+  
+  virtual void visitPre(const std::string& name,const Attribute& n) { 
+    applyIndent(); 
+    std::cerr << "(" << "Attribute " << name << "="; 
+    pushScope();
+  }
+  
+  virtual void visitPost(const std::string& name,const Attribute& n) { 
+    applyIndent();
+    popScope();
+    std::cerr << ")"; 
+    applyNl(); 
+  }  
+  
+  virtual void visitPre(const std::string& name,const Node& n) { 
+    applyIndent(); 
+    std::cerr << "(" << "Node " << name << "="; 
+    pushScope();
+  }
+  
+  virtual void visitPost(const std::string& name,const Node& n) { 
+    applyIndent();
+    popScope();
+    std::cerr << ")"; 
+    applyNl(); 
+  }  
+  
+  virtual void visitPre(const std::string& name,const Nodes& n) { 
+    applyIndent(); 
+    std::cerr << "(" << "Nodes " << name << "="; 
+    pushScope();
+  }
+  
+  virtual void visitPost(const std::string& name,const Nodes& n) { 
+    applyIndent();
+    popScope();
+    std::cerr << ")"; 
+    applyNl(); 
+  }  
+  
+  
+  virtual void visit(const std::string& name,const int64_t& v) { std::cerr << "(" << name << "=" << "\"" << v << "\")"; }
+  virtual void visit(const std::string& name,const std::string& v) { std::cerr << "(" << name << "=" << "\"" << v << "\")"; }
 };
 
