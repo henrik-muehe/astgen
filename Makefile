@@ -1,3 +1,4 @@
+GREG?=../greg/greg
 CXX?=g++
 CXXFLAGS=-O0 -g -std=c++0x
 LDFLAGS=-lctemplate
@@ -5,7 +6,7 @@ LDFLAGS=-lctemplate
 all: main
 
 main:
-	../greg/greg astgen.peg > astgen.cpp
+	$(GREG) astgen.peg > astgen.cpp
 	$(CXX) $(CXXFLAGS) -o astgen astgen.cpp $(LDFLAGS)
 
 ast:
