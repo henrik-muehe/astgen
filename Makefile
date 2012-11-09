@@ -1,4 +1,4 @@
-GREG?=../greg/greg
+GREG?=../greg-cpp/greg
 CXX?=g++
 CXXFLAGS=-O0 -g -std=c++0x
 LDFLAGS=-lctemplate
