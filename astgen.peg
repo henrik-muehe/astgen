@@ -55,6 +55,107 @@ void generateVisitor(const std::vector<std::unique_ptr<Node>>& nodes) {
   out << "};" << endl << endl;
 }
 
+static std::string rubyDefinitionTemplate = R"tpl(
+{{#NODES}}	
+class {{NODE_NAME}} < RenderStruct.new({{#ATTRS}}:{{ATTR_NAME}}{{#ATTRS_separator}},{{/ATTRS_separator}}{{/ATTRS}}); end
+{{/NODES}}
+)tpl"; //"
+
+std::string generateRubyDefinition(const std::vector<std::unique_ptr<Node>>& nodes) {
+  ctemplate::StringToTemplateCache("ast_ruby_def",rubyDefinitionTemplate.c_str(),ctemplate::STRIP_BLANK_LINES);
+  
+  ctemplate::TemplateDictionary dict("ruby def");
+  for (auto& nodePtr : nodes) {
+    Node& node=*reinterpret_cast<Node*>(nodePtr.get());
+    
+    auto nodeDict=dict.AddSectionDictionary("NODES");
+    nodeDict->SetValue("NODE_NAME",node.name->id);
+
+		if (node.attributes.empty()) {
+	    auto attrDict=nodeDict->AddSectionDictionary("ATTRS");
+	    attrDict->SetValue("ATTR_NAME","dummy");
+		} else
+		for (auto& attrPtr : node.attributes) {
+	    Attribute& attr=*reinterpret_cast<Attribute*>(attrPtr.get());
+	    auto attrDict=nodeDict->AddSectionDictionary("ATTRS");
+	    attrDict->SetValue("ATTR_NAME",attr.name->id);
+		}
+  }
+  
+  string output;
+  ctemplate::ExpandTemplate("ast_ruby_def",ctemplate::STRIP_BLANK_LINES,&dict,&output);
+  return output;
+}
+
+
+static std::string rubyAstTemplate = R"tpl(
+struct RubyAstVisitor : public Visitor {
+	bool doComma=false;
+	
+	std::string getDefinition() const {
+		return R"(
+			{{DEFINITION}}
+		)";
+	}
+	
+	void tryComma() {
+		if (doComma) {
+			std::cerr << "," << std::endl;
+			doComma=false;
+		}
+	}
+	
+  void collectionPre() { 
+		tryComma();
+    std::cerr << "[";
+		doComma=false;
+  }
+  
+  void collectionPost() { 
+    std::cerr << "]";
+		doComma=true;
+  }  
+  
+  {{#NODES}}
+  virtual void visitPre(const std::string& name,const {{NODE_NAME}}& n) { 
+		tryComma();
+    std::cerr << "{{NODE_NAME}}.new(";
+  }
+  
+  virtual void visitPost(const std::string& name,const {{NODE_NAME}}& n) { 
+    std::cerr << ")";
+		doComma=true;
+  }  
+  {{/NODES}}
+  
+  virtual void visit(const std::string& name,const int64_t& v) { tryComma(); std::cerr << v; }
+  virtual void visit(const std::string& name,const std::string& v) { tryComma(); std::cerr << "\"" << v << "\""; }
+};
+)tpl"; //"
+
+void generateRubyAstVisitor(const std::vector<std::unique_ptr<Node>>& nodes) {
+	std::string def=generateRubyDefinition(nodes);
+	ctemplate::StringToTemplateCache("ast_ruby_ast",rubyAstTemplate.c_str(),ctemplate::DO_NOT_STRIP);
+  
+  ctemplate::TemplateDictionary dict("ruby ast");
+  dict.SetValue("DEFINITION",def);
+	if (nodes.empty()) {
+    auto nodeDict=dict.AddSectionDictionary("NODES");
+    nodeDict->SetValue("NODE_NAME",":dummy");
+	} else
+  for (auto& nodePtr : nodes) {
+    Node& node=*reinterpret_cast<Node*>(nodePtr.get());
+    
+    auto nodeDict=dict.AddSectionDictionary("NODES");
+    nodeDict->SetValue("NODE_NAME",node.name->id);
+  }
+  
+  string output;
+  ctemplate::ExpandTemplate("ast_ruby_ast",ctemplate::DO_NOT_STRIP,&dict,&output);
+  out << output << endl;
+}
+
+
 static std::string prettyPrinterTemplate = R"tpl(
 struct PrettyPrintVisitor : public Visitor {
   std::stack<bool> indentScopes;
@@ -246,6 +347,8 @@ struct CompileVisitor : public Visitor {
       generate(*reinterpret_cast<Node*>(item.get())); 
     }
     generatePrettyPrintVisitor(n);
+		generateRubyDefinition(n);
+    generateRubyAstVisitor(n);
   }
 };
 
@@ -299,7 +402,9 @@ int main()
   CompileVisitor c;
   G->ss->accept("root",c);
   
-  PrettyPrintVisitor p; G->ss->accept("root",p); cerr << endl;
+  //PrettyPrintVisitor p; G->ss->accept("root",p); cerr << endl << endl << endl;
+	
+  //RubyAstVisitor r; G->ss->accept("root",r); cerr << endl << endl << endl;
   yydeinit(G);
   return 0;
 }

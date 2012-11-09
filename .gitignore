@@ -1,0 +1,8 @@
+astgen
+old
+*.o
+*.so
+script
+*.dSYM
+*.d
+*.dpp

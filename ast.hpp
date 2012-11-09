@@ -302,3 +302,92 @@ struct PrettyPrintVisitor : public Visitor {
   virtual void visit(const std::string& name,const std::string& v) { std::cerr << "(" << name << "=" << "\"" << v << "\")"; }
 };
 
+
+struct RubyAstVisitor : public Visitor {
+	bool doComma=false;
+	
+	std::string getDefinition() const {
+		return R"(
+			class Id < Struct.new(:id); end
+class Type < Struct.new(:id,:collection); end
+class Attribute < Struct.new(:name,:type); end
+class Node < Struct.new(:name,:attributes); end
+class Nodes < Struct.new(:nodes); end
+
+		)";
+	}
+	
+	void tryComma() {
+		if (doComma) {
+			std::cerr << "," << std::endl;
+			doComma=false;
+		}
+	}
+	
+  void collectionPre() { 
+		tryComma();
+    std::cerr << "[";
+		doComma=false;
+  }
+  
+  void collectionPost() { 
+    std::cerr << "]";
+		doComma=true;
+  }  
+  
+  
+  virtual void visitPre(const std::string& name,const Id& n) { 
+		tryComma();
+    std::cerr << "Id.new(";
+  }
+  
+  virtual void visitPost(const std::string& name,const Id& n) { 
+    std::cerr << ")";
+		doComma=true;
+  }  
+  
+  virtual void visitPre(const std::string& name,const Type& n) { 
+		tryComma();
+    std::cerr << "Type.new(";
+  }
+  
+  virtual void visitPost(const std::string& name,const Type& n) { 
+    std::cerr << ")";
+		doComma=true;
+  }  
+  
+  virtual void visitPre(const std::string& name,const Attribute& n) { 
+		tryComma();
+    std::cerr << "Attribute.new(";
+  }
+  
+  virtual void visitPost(const std::string& name,const Attribute& n) { 
+    std::cerr << ")";
+		doComma=true;
+  }  
+  
+  virtual void visitPre(const std::string& name,const Node& n) { 
+		tryComma();
+    std::cerr << "Node.new(";
+  }
+  
+  virtual void visitPost(const std::string& name,const Node& n) { 
+    std::cerr << ")";
+		doComma=true;
+  }  
+  
+  virtual void visitPre(const std::string& name,const Nodes& n) { 
+		tryComma();
+    std::cerr << "Nodes.new(";
+  }
+  
+  virtual void visitPost(const std::string& name,const Nodes& n) { 
+    std::cerr << ")";
+		doComma=true;
+  }  
+  
+  
+  virtual void visit(const std::string& name,const int64_t& v) { tryComma(); std::cerr << v; }
+  virtual void visit(const std::string& name,const std::string& v) { tryComma(); std::cerr << "\"" << v << "\""; }
+};
+
