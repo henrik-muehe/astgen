@@ -136,7 +136,7 @@ struct RubyAstVisitor : public Visitor {
   }
   
   virtual void visitPost(const std::string& name,const {{NODE_NAME}}& n) { 
-    std::cerr << ")";
+    std::cerr << ").line_col({{LINE}},{{COL}})";
 		doComma=true;
   }  
   {{/NODES}}
@@ -161,6 +161,8 @@ void generateRubyAstVisitor(const std::vector<std::unique_ptr<Node>>& nodes) {
     
     auto nodeDict=dict.AddSectionDictionary("NODES");
     nodeDict->SetValue("NODE_NAME",node.name->id);
+    nodeDict->SetIntValue("LINE",node.line);
+    nodeDict->SetIntValue("COL",node.col);
   }
   
   string output;
