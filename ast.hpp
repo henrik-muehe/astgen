@@ -201,7 +201,7 @@ std::ostream& operator<< (std::ostream& out,const Nodes& node) {
 
 struct PrettyPrintVisitor : public Visitor {
   std::stack<bool> indentScopes;
-  uint64_t indentDepth=0;
+  uint64_t indentDepth;
   
   void pushScope(bool indent=false) { indentScopes.push(indent); indentDepth+=indent; }
   void popScope() { indentDepth-=indentScopes.top(); indentScopes.pop(); }
@@ -217,7 +217,7 @@ struct PrettyPrintVisitor : public Visitor {
       std::cerr << std::endl;
   }
   
-  PrettyPrintVisitor() { pushScope(); }
+  PrettyPrintVisitor() : indentDepth(0) { pushScope(); }
   
   void collectionPre() { 
     applyIndent();
@@ -304,15 +304,17 @@ struct PrettyPrintVisitor : public Visitor {
 
 
 struct RubyAstVisitor : public Visitor {
-	bool doComma=false;
+	bool doComma;
+   
+   RubyAstVisitor() : doComma(false) {}
 	
 	std::string getDefinition() const {
 		return R"(
-			class Id < Struct.new(:id); end
-class Type < Struct.new(:id,:collection); end
-class Attribute < Struct.new(:name,:type); end
-class Node < Struct.new(:name,:attributes); end
-class Nodes < Struct.new(:nodes); end
+			class Id < RenderStruct.new(:id); end
+class Type < RenderStruct.new(:id,:collection); end
+class Attribute < RenderStruct.new(:name,:type); end
+class Node < RenderStruct.new(:name,:attributes); end
+class Nodes < RenderStruct.new(:nodes); end
 
 		)";
 	}

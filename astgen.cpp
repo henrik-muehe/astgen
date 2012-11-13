@@ -101,7 +101,9 @@ std::string generateRubyDefinition(const std::vector<std::unique_ptr<Node>>& nod
 
 static std::string rubyAstTemplate = R"tpl(
 struct RubyAstVisitor : public Visitor {
-	bool doComma=false;
+	bool doComma;
+   
+   RubyAstVisitor() : doComma(false) {}
 	
 	std::string getDefinition() const {
 		return R"(
@@ -170,7 +172,7 @@ void generateRubyAstVisitor(const std::vector<std::unique_ptr<Node>>& nodes) {
 static std::string prettyPrinterTemplate = R"tpl(
 struct PrettyPrintVisitor : public Visitor {
   std::stack<bool> indentScopes;
-  uint64_t indentDepth=0;
+  uint64_t indentDepth;
   
   void pushScope(bool indent=false) { indentScopes.push(indent); indentDepth+=indent; }
   void popScope() { indentDepth-=indentScopes.top(); indentScopes.pop(); }
@@ -186,7 +188,7 @@ struct PrettyPrintVisitor : public Visitor {
       std::cerr << std::endl;
   }
   
-  PrettyPrintVisitor() { pushScope(); }
+  PrettyPrintVisitor() : indentDepth(0) { pushScope(); }
   
   void collectionPre() { 
     applyIndent();
