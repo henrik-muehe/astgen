@@ -5,7 +5,7 @@ LDFLAGS=-lctemplate
 
 all: astgen
 
-astgen: astgen.cpp
+astgen: astgen.cpp ast.hpp
 	$(CXX) $(CXXFLAGS) -o astgen astgen.cpp $(LDFLAGS)
 
 astgen.cpp: astgen.peg
