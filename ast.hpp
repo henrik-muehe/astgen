@@ -37,6 +37,7 @@ struct Visitor {
   virtual void visit(const std::string& name,const std::string&) {}
   virtual void collectionPre() {}
   virtual void collectionPost() {}
+  virtual void emptyElement() {}
   virtual void visitPre(const std::string& name,const Id&) {}
   virtual void visitPost(const std::string& name,const Id&) {}
   virtual void visitPre(const std::string& name,const Type&) {}
@@ -84,7 +85,7 @@ struct Type : public Ast {
   void accept(const std::string& name,Visitor& visitor) {
     visitor.visitPre(name,*this);
     if (this->id.get()) this->id->accept("id",visitor);
-    visitor.visit("collection",this->collection);
+    else visitor.emptyElement();    visitor.visit("collection",this->collection);
     visitor.visitPost(name,*this);
   }
 };
@@ -113,8 +114,8 @@ struct Attribute : public Ast {
   void accept(const std::string& name,Visitor& visitor) {
     visitor.visitPre(name,*this);
     if (this->name.get()) this->name->accept("name",visitor);
-    if (this->type.get()) this->type->accept("type",visitor);
-    visitor.visitPost(name,*this);
+    else visitor.emptyElement();    if (this->type.get()) this->type->accept("type",visitor);
+    else visitor.emptyElement();    visitor.visitPost(name,*this);
   }
 };
 
@@ -144,7 +145,7 @@ struct Node : public Ast {
   void accept(const std::string& name,Visitor& visitor) {
     visitor.visitPre(name,*this);
     if (this->name.get()) this->name->accept("name",visitor);
-    visitor.collectionPre();
+    else visitor.emptyElement();    visitor.collectionPre();
     for (auto& item : attributes) {
       if (item.get()) item->accept("attributes",visitor);
     }
@@ -337,6 +338,10 @@ class Nodes < RenderStruct.new(:nodes); end
 		doComma=true;
   }  
   
+  void emptyElement() {
+	  std::cerr << "nil,";
+  }
+  
   
   virtual void visitPre(const std::string& name,const Id& n) { 
 		tryComma();
@@ -344,7 +349,7 @@ class Nodes < RenderStruct.new(:nodes); end
   }
   
   virtual void visitPost(const std::string& name,const Id& n) { 
-    std::cerr << ")";
+    std::cerr << ").line_col(0,0)";
 		doComma=true;
   }  
   
@@ -354,7 +359,7 @@ class Nodes < RenderStruct.new(:nodes); end
   }
   
   virtual void visitPost(const std::string& name,const Type& n) { 
-    std::cerr << ")";
+    std::cerr << ").line_col(0,0)";
 		doComma=true;
   }  
   
@@ -364,7 +369,7 @@ class Nodes < RenderStruct.new(:nodes); end
   }
   
   virtual void visitPost(const std::string& name,const Attribute& n) { 
-    std::cerr << ")";
+    std::cerr << ").line_col(0,0)";
 		doComma=true;
   }  
   
@@ -374,7 +379,7 @@ class Nodes < RenderStruct.new(:nodes); end
   }
   
   virtual void visitPost(const std::string& name,const Node& n) { 
-    std::cerr << ")";
+    std::cerr << ").line_col(0,0)";
 		doComma=true;
   }  
   
@@ -384,7 +389,7 @@ class Nodes < RenderStruct.new(:nodes); end
   }
   
   virtual void visitPost(const std::string& name,const Nodes& n) { 
-    std::cerr << ")";
+    std::cerr << ").line_col(0,0)";
 		doComma=true;
   }  
   

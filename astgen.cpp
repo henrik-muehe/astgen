@@ -57,6 +57,7 @@ void generateVisitor(const std::vector<std::unique_ptr<Node>>& nodes) {
   out << "  virtual void visit(const std::string& name,const std::string&) {}" << endl;
   out << "  virtual void collectionPre() {}" << endl;
   out << "  virtual void collectionPost() {}" << endl;
+  out << "  virtual void emptyElement() {}" << endl;
   for (auto& nodePtr : nodes) {
     Node& node=*reinterpret_cast<Node*>(nodePtr.get());
     
@@ -128,6 +129,10 @@ struct RubyAstVisitor : public Visitor {
     std::cerr << "]";
 		doComma=true;
   }  
+  
+  void emptyElement() {
+	  std::cerr << ",nil";
+  }
   
   {{#NODES}}
   virtual void visitPre(const std::string& name,const {{NODE_NAME}}& n) { 
@@ -296,6 +301,7 @@ void generate(Node& node) {
       out << "    " << "visitor.visit(\""<< a->name->id <<"\",this->" << a->name->id << ");" << endl;
     } else if (!a->type->collection) {
       out << "    " << "if (this->"<<a->name->id<<".get()) this->" << a->name->id << "->accept(\""<< a->name->id <<"\",visitor);" << endl;
+		out << "    " << "else visitor.emptyElement();";
     } else {
       out << "    " << "visitor.collectionPre();" << endl;
       out << "    " << "for (auto& item : " << a->name->id << ") {" << endl;
