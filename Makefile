@@ -1,7 +1,9 @@
 GREG?=../greg-cpp/greg
 CXX?=g++
-CXXFLAGS=-O0 -g -std=c++0x
-LDFLAGS=-lctemplate
+CTEMPLATE_LDFLAGS=-L../ctemplate/built/lib -lctemplate_nothreads
+CTEMPLATE_IFLAGS=-I../ctemplate/built/include
+CXXFLAGS=-static -O0 -g -std=c++0x $(CTEMPLATE_IFLAGS)
+LDFLAGS=$(CTEMPLATE_LDFLAGS)
 
 all: astgen
 
