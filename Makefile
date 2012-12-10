@@ -1,9 +1,15 @@
+SYS=$(shell uname)
 GREG?=../greg-cpp/greg
 CXX?=g++
 CTEMPLATE_LDFLAGS=-L../ctemplate/built/lib -lctemplate_nothreads
 CTEMPLATE_IFLAGS=-I../ctemplate/built/include
-CXXFLAGS=-static -O0 -g -std=c++0x $(CTEMPLATE_IFLAGS)
+CXXFLAGS=-O0 -g -std=c++0x $(CTEMPLATE_IFLAGS)
 LDFLAGS=$(CTEMPLATE_LDFLAGS)
+
+ifneq ($(SYS),Darwin)
+	CXXFLAGS:=-static $(CXXFLAGS)
+endif
+
 
 all: astgen
 
